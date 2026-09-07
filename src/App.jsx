@@ -25,15 +25,10 @@ function App() {
       setLoading(true);
       setError("");
 
-      console.log("API:", API);
-
       const [statsRes, productsRes] = await Promise.all([
         fetch(`${API}/stats`),
         fetch(`${API}/products`),
       ]);
-
-      console.log("Stats status:", statsRes.status);
-      console.log("Products status:", productsRes.status);
 
       if (!statsRes.ok) {
         throw new Error(`Stats API failed: ${statsRes.status}`);
@@ -46,11 +41,28 @@ function App() {
       const statsData = await statsRes.json();
       const productsData = await productsRes.json();
 
-      console.log("Stats:", statsData);
-      console.log("Products:", productsData);
+      // DEBUG
+      console.log("=================================");
+      console.log("PRODUCTS FROM API:", productsData);
+      console.log("FIRST PRODUCT FROM API:", productsData?.[0]);
+      console.log(
+        "FIRST PRODUCT NAME:",
+        productsData?.[0]?.product_name
+      );
+      console.log(
+        "FIRST PRODUCT URL:",
+        productsData?.[0]?.product_url
+      );
+      console.log("PRODUCT COUNT:", productsData?.length);
+      console.log("=================================");
 
       setStats(statsData);
-      setProducts(productsData);
+
+      setProducts(
+        Array.isArray(productsData)
+          ? productsData
+          : []
+      );
     } catch (err) {
       console.error("Dashboard API Error:", err);
 
@@ -62,80 +74,158 @@ function App() {
     }
   }
 
+  // =========================================================
+  // SEARCH
+  // =========================================================
+
   const filteredProducts = products.filter((item) =>
-    (item.title || "").toLowerCase().includes(search.toLowerCase())
+    (item.product_name || "")
+      .toLowerCase()
+      .includes(search.toLowerCase())
   );
+
+  // =========================================================
+  // PRICE FORMAT
+  // =========================================================
+
+  function formatPrice(value) {
+    return `$${Number(value || 0).toFixed(2)}`;
+  }
+
+  // =========================================================
+  // UI
+  // =========================================================
 
   return (
     <div className="dashboard">
+
+      {/* HEADER */}
       <header className="dashboard-header">
         <div>
           <h1>Pricing Intelligence Dashboard</h1>
-          <p>Monitor products, prices and market data</p>
+
+          <p>
+            Monitor products, prices and market data
+          </p>
         </div>
 
-        <button className="refresh-btn" onClick={loadData}>
+        <button
+          className="refresh-btn"
+          onClick={loadData}
+        >
           Refresh
         </button>
       </header>
 
+      {/* LOADING */}
       {loading && (
         <div className="status">
           Loading pricing data...
         </div>
       )}
 
+      {/* ERROR */}
       {error && (
         <div className="error">
           {error}
         </div>
       )}
 
+      {/* DATA */}
       {!loading && !error && (
         <>
+
+          {/* =================================================
+              STATISTICS
+          ================================================= */}
+
           <div className="cards">
+
             <div className="card">
               <h3>Total Products</h3>
-              <h2>{stats.total_products}</h2>
+              <h2>
+                {stats.total_products}
+              </h2>
             </div>
 
             <div className="card">
               <h3>Average Price</h3>
               <h2>
-                ${Number(stats.average_price || 0).toFixed(2)}
+                {formatPrice(
+                  stats.average_price
+                )}
               </h2>
             </div>
 
             <div className="card">
               <h3>Highest Price</h3>
               <h2>
-                ${Number(stats.highest_price || 0).toFixed(2)}
+                {formatPrice(
+                  stats.highest_price
+                )}
               </h2>
             </div>
 
             <div className="card">
               <h3>Lowest Price</h3>
               <h2>
-                ${Number(stats.lowest_price || 0).toFixed(2)}
+                {formatPrice(
+                  stats.lowest_price
+                )}
               </h2>
             </div>
+
           </div>
 
+          {/* =================================================
+              SEARCH TOOLBAR
+          ================================================= */}
+
           <div className="toolbar">
+
             <input
               className="search"
               placeholder="Search Product..."
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(e) =>
+                setSearch(e.target.value)
+              }
             />
 
             <span className="result-count">
               {filteredProducts.length} products
             </span>
+
           </div>
 
+          {/* =================================================
+              DEBUG PRODUCT
+          ================================================= */}
+
+          <pre
+            style={{
+              background: "#111827",
+              color: "#00ff88",
+              padding: "15px",
+              borderRadius: "10px",
+              marginBottom: "20px",
+              overflowX: "auto",
+              fontSize: "13px",
+            }}
+          >
+            {products.length > 0
+              ? JSON.stringify(products[0], null, 2)
+              : "No product data"}
+          </pre>
+
+          {/* =================================================
+              PRODUCTS TABLE
+          ================================================= */}
+
           <div className="table-container">
+
             <table>
+
               <thead>
                 <tr>
                   <th>Title</th>
@@ -147,51 +237,90 @@ function App() {
               </thead>
 
               <tbody>
+
                 {filteredProducts.length === 0 ? (
+
                   <tr>
-                    <td colSpan="5">
+                    <td
+                      colSpan="5"
+                      className="empty"
+                    >
                       No Products Found
                     </td>
                   </tr>
+
                 ) : (
-                  filteredProducts.map((item, index) => (
-                    <tr key={item.url || index}>
-                      <td>{item.title || "-"}</td>
 
-                      <td>
-                        {item.currency || "USD"}{" "}
-                        {Number(item.price || 0).toFixed(2)}
-                      </td>
+                  filteredProducts.map(
+                    (item, index) => (
 
-                      <td>
-                        {item.source || "-"}
-                      </td>
+                      <tr
+                        key={
+                          `${item.goods_id}-${item.stored_at || index}`
+                        }
+                      >
 
-                      <td>
-                        {item.currency || "USD"}
-                      </td>
+                        {/* PRODUCT NAME */}
+                        <td>
+                          {item.product_name || "-"}
+                        </td>
 
-                      <td>
-                        {item.url ? (
-                          <a
-                            href={item.url}
-                            target="_blank"
-                            rel="noreferrer"
-                          >
-                            Open
-                          </a>
-                        ) : (
-                          "-"
-                        )}
-                      </td>
-                    </tr>
-                  ))
+                        {/* PRICE */}
+                        <td>
+                          {item.currency || "USD"}{" "}
+                          {Number(
+                            item.price || 0
+                          ).toFixed(2)}
+                        </td>
+
+                        {/* SOURCE */}
+                        <td>
+                          {item.source || "-"}
+                        </td>
+
+                        {/* CURRENCY */}
+                        <td>
+                          {item.currency || "USD"}
+                        </td>
+
+                        {/* PRODUCT URL */}
+                        <td>
+
+                          {item.product_url ? (
+
+                            <a
+                              href={item.product_url}
+                              target="_blank"
+                              rel="noreferrer"
+                            >
+                              Open
+                            </a>
+
+                          ) : (
+
+                            "-"
+
+                          )}
+
+                        </td>
+
+                      </tr>
+
+                    )
+                  )
+
                 )}
+
               </tbody>
+
             </table>
+
           </div>
+
         </>
+
       )}
+
     </div>
   );
 }
