@@ -1,295 +1,189 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import "./App.css";
 
-const API = "https://pricing-intelligence-engine.fastapicloud.dev";
+const API =
+  "https://pricing-intelligence-engine.fastapicloud.dev";
+
+const CANONICAL_PRODUCT_ID = "CLOUD-TEST-001";
 
 function App() {
-  const [stats, setStats] = useState({
-    total_products: 0,
-    average_price: 0,
-    highest_price: 0,
-    lowest_price: 0,
-  });
+  const [competitiveProduct, setCompetitiveProduct] =
+    useState(null);
 
-  const [products, setProducts] = useState([]);
-  const [priceChanges, setPriceChanges] = useState([]);
+  const [priceHistory, setPriceHistory] =
+    useState(null);
 
-  const [search, setSearch] = useState("");
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [priceChangesError, setPriceChangesError] = useState("");
+  const [priceChanges, setPriceChanges] =
+    useState(null);
+
+  const [priceTrends, setPriceTrends] =
+    useState(null);
+
+  const [signals, setSignals] =
+    useState(null);
+
+  const [loading, setLoading] =
+    useState(true);
+
+  const [refreshing, setRefreshing] =
+    useState(false);
+
+  const [error, setError] =
+    useState("");
 
   // =========================================================
-  // PRICE HISTORY
-  // =========================================================
-
-  const [selectedProduct, setSelectedProduct] = useState(null);
-  const [priceHistory, setPriceHistory] = useState([]);
-  const [priceHistoryLoading, setPriceHistoryLoading] = useState(false);
-  const [priceHistoryError, setPriceHistoryError] = useState("");
-
-  // =========================================================
-  // LOAD DASHBOARD DATA
+  // LOAD COMPETITIVE DASHBOARD
   // =========================================================
 
   useEffect(() => {
-    loadData();
+    loadCompetitiveData();
   }, []);
 
-  async function loadData() {
+  async function loadCompetitiveData() {
     try {
-      setLoading(true);
       setError("");
-      setPriceChangesError("");
 
-      const [statsRes, productsRes, priceChangesRes] =
-        await Promise.all([
-          fetch(`${API}/stats`),
-          fetch(`${API}/products`),
-          fetch(`${API}/price-changes`),
-        ]);
-
-      if (!statsRes.ok) {
-        throw new Error(`Stats API failed: ${statsRes.status}`);
-      }
-
-      if (!productsRes.ok) {
-        throw new Error(`Products API failed: ${productsRes.status}`);
-      }
-
-      const statsData = await statsRes.json();
-      const productsData = await productsRes.json();
-
-      setStats(statsData);
-
-      setProducts(
-        Array.isArray(productsData)
-          ? productsData
-          : []
-      );
-
-      // PRICE CHANGES
-      if (priceChangesRes.ok) {
-        const priceChangesData =
-          await priceChangesRes.json();
-
-        setPriceChanges(
-          Array.isArray(priceChangesData)
-            ? priceChangesData
-            : []
-        );
+      if (!competitiveProduct) {
+        setLoading(true);
       } else {
-        setPriceChanges([]);
-        setPriceChangesError(
-          `Price Changes API failed: ${priceChangesRes.status}`
+        setRefreshing(true);
+      }
+
+      const [
+        productResponse,
+        historyResponse,
+        changesResponse,
+        trendsResponse,
+        signalsResponse,
+      ] = await Promise.all([
+        fetch(
+          `${API}/competitive-products/${CANONICAL_PRODUCT_ID}`
+        ),
+
+        fetch(
+          `${API}/competitive-products/${CANONICAL_PRODUCT_ID}/price-history`
+        ),
+
+        fetch(
+          `${API}/competitive-products/${CANONICAL_PRODUCT_ID}/price-changes`
+        ),
+
+        fetch(
+          `${API}/competitive-products/${CANONICAL_PRODUCT_ID}/price-trends`
+        ),
+
+        fetch(
+          `${API}/competitive-products/${CANONICAL_PRODUCT_ID}/signals`
+        ),
+      ]);
+
+      if (!productResponse.ok) {
+        throw new Error(
+          `Competitive Product API failed: ${productResponse.status}`
         );
       }
 
-      console.log("=================================");
-      console.log("PRODUCT COUNT:", productsData?.length);
-      console.log(
-        "PRICE CHANGES STATUS:",
-        priceChangesRes.status
-      );
-      console.log("=================================");
+      if (!historyResponse.ok) {
+        throw new Error(
+          `Price History API failed: ${historyResponse.status}`
+        );
+      }
 
+      if (!changesResponse.ok) {
+        throw new Error(
+          `Price Changes API failed: ${changesResponse.status}`
+        );
+      }
+
+      if (!trendsResponse.ok) {
+        throw new Error(
+          `Price Trends API failed: ${trendsResponse.status}`
+        );
+      }
+
+      if (!signalsResponse.ok) {
+        throw new Error(
+          `Pricing Signals API failed: ${signalsResponse.status}`
+        );
+      }
+
+      const [
+        productData,
+        historyData,
+        changesData,
+        trendsData,
+        signalsData,
+      ] = await Promise.all([
+        productResponse.json(),
+        historyResponse.json(),
+        changesResponse.json(),
+        trendsResponse.json(),
+        signalsResponse.json(),
+      ]);
+
+      setCompetitiveProduct(productData);
+      setPriceHistory(historyData);
+      setPriceChanges(changesData);
+      setPriceTrends(trendsData);
+      setSignals(signalsData);
+
+      console.log(
+        "Competitive Pricing Dashboard loaded",
+        {
+          productData,
+          historyData,
+          changesData,
+          trendsData,
+          signalsData,
+        }
+      );
     } catch (err) {
-      console.error("Dashboard API Error:", err);
+      console.error(
+        "Competitive Dashboard Error:",
+        err
+      );
 
       setError(
-        `Unable to connect to Pricing Intelligence API: ${err.message}`
+        `Unable to load competitive pricing data: ${err.message}`
       );
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   }
 
   // =========================================================
-  // PRICE HISTORY
-  // =========================================================
-
-  async function loadPriceHistory(product) {
-    const productId =
-      product?.product_id ||
-      product?.goods_id ||
-      product?.source_product_id;
-
-    if (!productId) {
-      setPriceHistoryError(
-        "This product does not have a valid product ID."
-      );
-      return;
-    }
-
-    try {
-      setSelectedProduct(product);
-      setPriceHistory([]);
-      setPriceHistoryError("");
-      setPriceHistoryLoading(true);
-
-      const response = await fetch(
-        `${API}/products/${encodeURIComponent(productId)}/price-history`
-      );
-
-      if (!response.ok) {
-        if (response.status === 404) {
-          throw new Error(
-            "No price history found for this product."
-          );
-        }
-
-        throw new Error(
-          `Price History API failed: ${response.status}`
-        );
-      }
-
-      const data = await response.json();
-
-      setPriceHistory(
-        Array.isArray(data.observations)
-          ? data.observations
-          : []
-      );
-
-    } catch (err) {
-      console.error("Price History Error:", err);
-
-      setPriceHistory([]);
-      setPriceHistoryError(err.message);
-    } finally {
-      setPriceHistoryLoading(false);
-    }
-  }
-
-  function closePriceHistory() {
-    setSelectedProduct(null);
-    setPriceHistory([]);
-    setPriceHistoryError("");
-  }
-
-  // =========================================================
-  // SEARCH
-  // =========================================================
-
-  const filteredProducts = products.filter((item) =>
-    (item.product_name || "")
-      .toLowerCase()
-      .includes(search.toLowerCase())
-  );
-
-  // =========================================================
-  // PRICE FORMAT
+  // HELPERS
   // =========================================================
 
   function formatPrice(value) {
-    return `$${Number(value || 0).toFixed(2)}`;
-  }
-
-  function formatChange(value) {
-    const number = Number(value || 0);
-
-    if (number > 0) {
-      return `+$${number.toFixed(2)}`;
+    if (
+      value === null ||
+      value === undefined ||
+      Number.isNaN(Number(value))
+    ) {
+      return "-";
     }
 
-    if (number < 0) {
-      return `-$${Math.abs(number).toFixed(2)}`;
-    }
-
-    return "$0.00";
+    return `$${Number(value).toFixed(2)}`;
   }
 
   function formatPercent(value) {
-    const number = Number(value || 0);
+    if (
+      value === null ||
+      value === undefined ||
+      Number.isNaN(Number(value))
+    ) {
+      return "-";
+    }
+
+    const number = Number(value);
 
     if (number > 0) {
       return `+${number.toFixed(2)}%`;
     }
 
-    if (number < 0) {
-      return `${number.toFixed(2)}%`;
-    }
-
-    return "0.00%";
-  }
-
-  // =========================================================
-  // PRICE CHANGE STYLES
-  // =========================================================
-
-  function getDirectionStyle(direction) {
-    if (direction === "increase") {
-      return {
-        background: "#dcfce7",
-        color: "#166534",
-      };
-    }
-
-    if (direction === "decrease") {
-      return {
-        background: "#fee2e2",
-        color: "#991b1b",
-      };
-    }
-
-    return {
-      background: "#f3f4f6",
-      color: "#374151",
-    };
-  }
-
-  function getDirectionIcon(direction) {
-    if (direction === "increase") {
-      return "↑";
-    }
-
-    if (direction === "decrease") {
-      return "↓";
-    }
-
-    return "→";
-  }
-
-  // =========================================================
-  // PRICE HISTORY HELPERS
-  // =========================================================
-
-  function getHistoryMinPrice() {
-    if (!priceHistory.length) {
-      return 0;
-    }
-
-    return Math.min(
-      ...priceHistory.map((item) =>
-        Number(item.price || 0)
-      )
-    );
-  }
-
-  function getHistoryMaxPrice() {
-    if (!priceHistory.length) {
-      return 0;
-    }
-
-    return Math.max(
-      ...priceHistory.map((item) =>
-        Number(item.price || 0)
-      )
-    );
-  }
-
-  function getPriceBarWidth(price) {
-    const numericPrice = Number(price || 0);
-    const maxPrice = getHistoryMaxPrice();
-
-    if (!maxPrice || !numericPrice) {
-      return 5;
-    }
-
-    return Math.max(
-      8,
-      (numericPrice / maxPrice) * 100
-    );
+    return `${number.toFixed(2)}%`;
   }
 
   function formatDate(value) {
@@ -297,15 +191,248 @@ function App() {
       return "-";
     }
 
-    const date = new Date(
+    const parsed = new Date(
       String(value).replace(" ", "T")
     );
 
-    if (Number.isNaN(date.getTime())) {
-      return value;
+    if (Number.isNaN(parsed.getTime())) {
+      return String(value);
     }
 
-    return date.toLocaleString();
+    return parsed.toLocaleString();
+  }
+
+  function sourceLabel(source) {
+    const normalized =
+      String(source || "").toUpperCase();
+
+    if (normalized === "BESTBUY") {
+      return "Best Buy";
+    }
+
+    if (normalized === "WALMART") {
+      return "Walmart";
+    }
+
+    if (normalized === "AMAZON") {
+      return "Amazon";
+    }
+
+    return source || "-";
+  }
+
+  function getSourceClass(source) {
+    const normalized =
+      String(source || "").toUpperCase();
+
+    if (normalized === "AMAZON") {
+      return "source-amazon";
+    }
+
+    if (normalized === "WALMART") {
+      return "source-walmart";
+    }
+
+    if (normalized === "BESTBUY") {
+      return "source-bestbuy";
+    }
+
+    return "source-default";
+  }
+
+  function getSignalClass(severity) {
+    const normalized =
+      String(severity || "").toLowerCase();
+
+    if (normalized === "high") {
+      return "signal-high";
+    }
+
+    if (normalized === "medium") {
+      return "signal-medium";
+    }
+
+    return "signal-low";
+  }
+
+  function getTrendClass(trend) {
+    const normalized =
+      String(trend || "").toLowerCase();
+
+    if (normalized === "increasing") {
+      return "trend-up";
+    }
+
+    if (normalized === "decreasing") {
+      return "trend-down";
+    }
+
+    if (normalized === "stable") {
+      return "trend-stable";
+    }
+
+    return "trend-insufficient";
+  }
+
+  function getTrendLabel(trend) {
+    if (trend === "increasing") {
+      return "Increasing";
+    }
+
+    if (trend === "decreasing") {
+      return "Decreasing";
+    }
+
+    if (trend === "stable") {
+      return "Stable";
+    }
+
+    return "Insufficient data";
+  }
+
+  function getLatestHistoryPrice(history) {
+    if (
+      !Array.isArray(history) ||
+      history.length === 0
+    ) {
+      return null;
+    }
+
+    return history[history.length - 1]?.price;
+  }
+
+  // =========================================================
+  // DERIVED DATA
+  // =========================================================
+
+  const products =
+    competitiveProduct?.products || [];
+
+  const referenceSource =
+    competitiveProduct?.reference_source || "AMAZON";
+
+  const referenceProduct = products.find(
+    (product) =>
+      String(product.source).toUpperCase() ===
+      referenceSource
+  );
+
+  const competitorProducts =
+    products.filter(
+      (product) =>
+        String(product.source).toUpperCase() !==
+        referenceSource
+    );
+
+  const historyProducts =
+    priceHistory?.products || [];
+
+  const trendProducts =
+    priceTrends?.products || [];
+
+  const changeProducts =
+    priceChanges?.products || [];
+
+  const signalItems =
+    signals?.signals || [];
+
+  const matchedProductCount =
+    products.length;
+
+  const averageDifference = useMemo(() => {
+    if (!products.length) {
+      return null;
+    }
+
+    const differences = products
+      .map(
+        (product) =>
+          product.price_difference_percent
+      )
+      .filter(
+        (value) =>
+          value !== null &&
+          value !== undefined
+      )
+      .map(Number);
+
+    if (!differences.length) {
+      return null;
+    }
+
+    return (
+      differences.reduce(
+        (total, value) => total + value,
+        0
+      ) / differences.length
+    );
+  }, [products]);
+
+  // =========================================================
+  // LOADING
+  // =========================================================
+
+  if (loading) {
+    return (
+      <div className="dashboard">
+        <div className="loading-screen">
+          <div className="loading-spinner" />
+
+          <h2>
+            Loading Competitive Pricing
+          </h2>
+
+          <p>
+            Collecting product comparison,
+            history and pricing signals...
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // =========================================================
+  // ERROR
+  // =========================================================
+
+  if (error && !competitiveProduct) {
+    return (
+      <div className="dashboard">
+        <header className="dashboard-header">
+          <div>
+            <div className="eyebrow">
+              PRICING INTELLIGENCE
+            </div>
+
+            <h1>
+              Competitive Pricing
+            </h1>
+
+            <p>
+              Consumer electronics market monitoring
+            </p>
+          </div>
+
+          <button
+            className="refresh-btn"
+            onClick={loadCompetitiveData}
+            disabled={refreshing}
+          >
+            {refreshing
+              ? "Refreshing..."
+              : "Retry"}
+          </button>
+        </header>
+
+        <div className="error-panel">
+          <h3>
+            Unable to load dashboard
+          </h3>
+
+          <p>{error}</p>
+        </div>
+      </div>
+    );
   }
 
   // =========================================================
@@ -315,775 +442,800 @@ function App() {
   return (
     <div className="dashboard">
 
-      {/* =================================================
+      {/* =====================================================
           HEADER
-      ================================================= */}
+      ===================================================== */}
 
       <header className="dashboard-header">
+
         <div>
-          <h1>Pricing Intelligence Dashboard</h1>
+
+          <div className="eyebrow">
+            PRICING INTELLIGENCE
+          </div>
+
+          <h1>
+            Competitive Pricing
+          </h1>
 
           <p>
-            Monitor products, prices and market data
+            Consumer electronics market monitoring
           </p>
+
         </div>
 
-        <button
-          className="refresh-btn"
-          onClick={loadData}
-          disabled={loading}
-        >
-          {loading ? "Loading..." : "Refresh"}
-        </button>
+        <div className="header-actions">
+
+          <div className="data-mode">
+            <span className="status-dot" />
+            MVP Data
+          </div>
+
+          <button
+            className="refresh-btn"
+            onClick={loadCompetitiveData}
+            disabled={refreshing}
+          >
+            {refreshing
+              ? "Refreshing..."
+              : "Refresh"}
+          </button>
+
+        </div>
+
       </header>
 
-      {/* =================================================
-          LOADING
-      ================================================= */}
-
-      {loading && (
-        <div className="status">
-          Loading pricing data...
-        </div>
-      )}
-
-      {/* =================================================
-          ERROR
-      ================================================= */}
+      {/* =====================================================
+          ERROR BANNER
+      ===================================================== */}
 
       {error && (
-        <div className="error">
+        <div className="error-banner">
           {error}
         </div>
       )}
 
-      {/* =================================================
-          DATA
-      ================================================= */}
+      {/* =====================================================
+          PRODUCT HERO
+      ===================================================== */}
 
-      {!loading && !error && (
-        <>
+      <section className="product-hero">
 
-          {/* =================================================
-              STATISTICS
-          ================================================= */}
+        <div>
 
-          <div className="cards">
-
-            <div className="card">
-              <h3>Total Products</h3>
-
-              <h2>
-                {stats.total_products}
-              </h2>
-            </div>
-
-            <div className="card">
-              <h3>Average Price</h3>
-
-              <h2>
-                {formatPrice(stats.average_price)}
-              </h2>
-            </div>
-
-            <div className="card">
-              <h3>Highest Price</h3>
-
-              <h2>
-                {formatPrice(stats.highest_price)}
-              </h2>
-            </div>
-
-            <div className="card">
-              <h3>Lowest Price</h3>
-
-              <h2>
-                {formatPrice(stats.lowest_price)}
-              </h2>
-            </div>
-
+          <div className="product-label">
+            MATCHED PRODUCT
           </div>
 
-          {/* =================================================
-              SEARCH TOOLBAR
-          ================================================= */}
+          <h2>
+            Sony WH-1000XM5 Wireless Headphones
+          </h2>
 
-          <div className="toolbar">
+          <div className="product-meta">
 
-            <input
-              className="search"
-              placeholder="Search Product..."
-              value={search}
-              onChange={(e) =>
-                setSearch(e.target.value)
-              }
-            />
+            <span>
+              Canonical ID:
+              <strong>
+                {competitiveProduct?.canonical_product_id ||
+                  CANONICAL_PRODUCT_ID}
+              </strong>
+            </span>
 
-            <span className="result-count">
-              {filteredProducts.length} products
+            <span>
+              Reference:
+              <strong>
+                {sourceLabel(referenceSource)}
+              </strong>
+            </span>
+
+            <span>
+              Sources:
+              <strong>
+                {matchedProductCount}
+              </strong>
             </span>
 
           </div>
 
-          {/* =================================================
-              PRODUCTS TABLE
-          ================================================= */}
+        </div>
 
-          <div className="table-container">
+        <div className="last-updated">
 
-            <table>
+          <span>
+            Last updated
+          </span>
 
-              <thead>
-                <tr>
-                  <th>Title</th>
-                  <th>Price</th>
-                  <th>Source</th>
-                  <th>Currency</th>
-                  <th>History</th>
-                  <th>URL</th>
-                </tr>
-              </thead>
+          <strong>
+            {formatDate(
+              competitiveProduct?.last_updated
+            )}
+          </strong>
 
-              <tbody>
+        </div>
 
-                {filteredProducts.length === 0 ? (
+      </section>
 
-                  <tr>
-                    <td
-                      colSpan="6"
-                      className="empty"
-                    >
-                      No Products Found
-                    </td>
-                  </tr>
+      {/* =====================================================
+          KPI CARDS
+      ===================================================== */}
 
-                ) : (
+      <section className="kpi-grid">
 
-                  filteredProducts.map(
-                    (item, index) => (
+        <div className="kpi-card reference-card">
 
-                      <tr
-                        key={
-                          `${item.goods_id || item.product_id}-${item.stored_at || index}`
-                        }
-                      >
+          <div className="kpi-top">
 
-                        <td>
-                          {item.product_name || "-"}
-                        </td>
+            <span className="kpi-label">
+              Reference Price
+            </span>
 
-                        <td>
-                          {item.currency || "USD"}{" "}
-                          {Number(
-                            item.price || 0
-                          ).toFixed(2)}
-                        </td>
-
-                        <td>
-                          {item.source || "-"}
-                        </td>
-
-                        <td>
-                          {item.currency || "USD"}
-                        </td>
-
-                        <td>
-
-                          <button
-                            onClick={() =>
-                              loadPriceHistory(item)
-                            }
-                            style={{
-                              border: "none",
-                              background: "#111827",
-                              color: "#ffffff",
-                              padding: "7px 12px",
-                              borderRadius: "7px",
-                              cursor: "pointer",
-                              fontSize: "13px",
-                              fontWeight: "600",
-                            }}
-                          >
-                            View History
-                          </button>
-
-                        </td>
-
-                        <td>
-
-                          {item.product_url ? (
-
-                            <a
-                              href={item.product_url}
-                              target="_blank"
-                              rel="noreferrer"
-                            >
-                              Open
-                            </a>
-
-                          ) : (
-
-                            "-"
-
-                          )}
-
-                        </td>
-
-                      </tr>
-                    )
-                  )
-                )}
-
-              </tbody>
-
-            </table>
+            <span className="source-badge source-amazon">
+              Amazon
+            </span>
 
           </div>
 
-          {/* =================================================
-              PRICE HISTORY
-          ================================================= */}
+          <div className="kpi-value">
+            {formatPrice(
+              competitiveProduct?.reference_price
+            )}
+          </div>
 
-          {selectedProduct && (
-            <section
-              style={{
-                marginTop: "40px",
-                marginBottom: "40px",
-              }}
-            >
+          <div className="kpi-subtitle">
+            Baseline source
+          </div>
 
-              <div
-                style={{
-                  background: "#ffffff",
-                  borderRadius: "14px",
-                  padding: "25px",
-                  boxShadow:
-                    "0 4px 15px rgba(0,0,0,0.06)",
-                }}
-              >
+        </div>
 
-                {/* HISTORY HEADER */}
+        <div className="kpi-card">
 
+          <div className="kpi-top">
+
+            <span className="kpi-label">
+              Market Average
+            </span>
+
+          </div>
+
+          <div className="kpi-value">
+            {formatPrice(
+              competitiveProduct?.market_average
+            )}
+          </div>
+
+          <div className="kpi-subtitle">
+            Across matched sources
+          </div>
+
+        </div>
+
+        <div className="kpi-card">
+
+          <div className="kpi-top">
+
+            <span className="kpi-label">
+              Reference vs Market
+            </span>
+
+          </div>
+
+          <div className="kpi-value">
+            {formatPercent(
+              competitiveProduct?.reference_difference_percent
+            )}
+          </div>
+
+          <div className="kpi-subtitle">
+            Difference from market average
+          </div>
+
+        </div>
+
+        <div className="kpi-card">
+
+          <div className="kpi-top">
+
+            <span className="kpi-label">
+              Matched Sources
+            </span>
+
+          </div>
+
+          <div className="kpi-value">
+            {matchedProductCount}
+          </div>
+
+          <div className="kpi-subtitle">
+            Amazon + competitors
+          </div>
+
+        </div>
+
+      </section>
+
+      {/* =====================================================
+          PRICING COMPARISON
+      ===================================================== */}
+
+      <section className="panel">
+
+        <div className="section-header">
+
+          <div>
+            <h2>
+              Pricing Comparison
+            </h2>
+
+            <p>
+              Current prices across matched retailers
+            </p>
+          </div>
+
+          <span className="section-count">
+            {products.length} sources
+          </span>
+
+        </div>
+
+        <div className="comparison-grid">
+
+          {products.map(
+            (product) => {
+
+              const isReference =
+                String(product.source).toUpperCase() ===
+                referenceSource;
+
+              return (
                 <div
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "flex-start",
-                    gap: "20px",
-                    marginBottom: "25px",
-                  }}
+                  className={`retailer-card ${
+                    isReference
+                      ? "retailer-reference"
+                      : ""
+                  }`}
+                  key={`${product.source}-${product.source_product_id}`}
                 >
 
-                  <div>
+                  <div className="retailer-header">
 
-                    <h2
-                      style={{
-                        margin: 0,
-                        fontSize: "24px",
-                      }}
+                    <span
+                      className={`source-badge ${getSourceClass(
+                        product.source
+                      )}`}
                     >
-                      Price History
-                    </h2>
+                      {sourceLabel(
+                        product.source
+                      )}
+                    </span>
 
-                    <p
-                      style={{
-                        marginTop: "7px",
-                        marginBottom: 0,
-                        color: "#6b7280",
-                      }}
-                    >
-                      {selectedProduct.product_name ||
-                        selectedProduct.product_id ||
-                        selectedProduct.goods_id ||
-                        "Selected Product"}
+                    {isReference && (
+                      <span className="reference-badge">
+                        REFERENCE
+                      </span>
+                    )}
+
+                  </div>
+
+                  <div className="retailer-price">
+                    {formatPrice(
+                      product.price
+                    )}
+                  </div>
+
+                  <div className="retailer-difference">
+
+                    <span>
+                      vs market
+                    </span>
+
+                    <strong>
+                      {formatPercent(
+                        product.price_difference_percent
+                      )}
+                    </strong>
+
+                  </div>
+
+                  <div className="retailer-footer">
+
+                    <span>
+                      {product.availability ===
+                      "in_stock"
+                        ? "In stock"
+                        : product.availability}
+                    </span>
+
+                    <span>
+                      {formatDate(
+                        product.observed_at
+                      )}
+                    </span>
+
+                  </div>
+
+                </div>
+              );
+            }
+          )}
+
+        </div>
+
+      </section>
+
+      {/* =====================================================
+          PRICING SIGNALS
+      ===================================================== */}
+
+      <section className="panel">
+
+        <div className="section-header">
+
+          <div>
+            <h2>
+              Pricing Signals
+            </h2>
+
+            <p>
+              Rule-based signals generated from competitive data
+            </p>
+          </div>
+
+          <span className="signal-count">
+            {signalItems.length} active
+          </span>
+
+        </div>
+
+        {signalItems.length === 0 ? (
+
+          <div className="empty-panel">
+            No pricing signals detected.
+          </div>
+
+        ) : (
+
+          <div className="signals-list">
+
+            {signalItems.map(
+              (signal, index) => (
+
+                <div
+                  className={`signal-card ${getSignalClass(
+                    signal.severity
+                  )}`}
+                  key={`${signal.signal_type}-${index}`}
+                >
+
+                  <div className="signal-icon">
+                    !
+                  </div>
+
+                  <div className="signal-content">
+
+                    <div className="signal-heading">
+
+                      <strong>
+                        {signal.signal_type
+                          ?.replaceAll(
+                            "_",
+                            " "
+                          )}
+                      </strong>
+
+                      <span className="severity">
+                        {signal.severity}
+                      </span>
+
+                    </div>
+
+                    <p>
+                      {signal.message}
                     </p>
 
                   </div>
 
-                  <button
-                    onClick={closePriceHistory}
-                    style={{
-                      border: "1px solid #d1d5db",
-                      background: "#ffffff",
-                      color: "#374151",
-                      padding: "8px 14px",
-                      borderRadius: "8px",
-                      cursor: "pointer",
-                      fontWeight: "600",
-                    }}
+                </div>
+
+              )
+            )}
+
+          </div>
+
+        )}
+
+      </section>
+
+      {/* =====================================================
+          PRICE TRENDS
+      ===================================================== */}
+
+      <section className="panel">
+
+        <div className="section-header">
+
+          <div>
+            <h2>
+              Price Trends
+            </h2>
+
+            <p>
+              Historical movement for each matched retailer
+            </p>
+          </div>
+
+        </div>
+
+        <div className="trend-grid">
+
+          {trendProducts.map(
+            (product) => (
+
+              <div
+                className="trend-card"
+                key={`${product.source}-${product.source_product_id}`}
+              >
+
+                <div className="trend-header">
+
+                  <span
+                    className={`source-badge ${getSourceClass(
+                      product.source
+                    )}`}
                   >
-                    Close
-                  </button>
+                    {sourceLabel(
+                      product.source
+                    )}
+                  </span>
+
+                  <span
+                    className={`trend-badge ${getTrendClass(
+                      product.trend
+                    )}`}
+                  >
+                    {getTrendLabel(
+                      product.trend
+                    )}
+                  </span>
 
                 </div>
 
-                {/* HISTORY LOADING */}
+                <div className="trend-stats">
 
-                {priceHistoryLoading && (
-                  <div className="status">
-                    Loading price history...
+                  <div>
+                    <span>
+                      Min
+                    </span>
+
+                    <strong>
+                      {formatPrice(
+                        product.min_price
+                      )}
+                    </strong>
                   </div>
-                )}
 
-                {/* HISTORY ERROR */}
+                  <div>
+                    <span>
+                      Average
+                    </span>
 
-                {priceHistoryError && (
-                  <div className="error">
-                    {priceHistoryError}
+                    <strong>
+                      {formatPrice(
+                        product.average_price
+                      )}
+                    </strong>
                   </div>
-                )}
 
-                {/* HISTORY DATA */}
+                  <div>
+                    <span>
+                      Max
+                    </span>
 
-                {!priceHistoryLoading &&
-                  !priceHistoryError &&
-                  priceHistory.length > 0 && (
-                    <>
+                    <strong>
+                      {formatPrice(
+                        product.max_price
+                      )}
+                    </strong>
+                  </div>
 
-                      {/* SUMMARY */}
+                </div>
 
-                      <div
-                        className="cards"
-                        style={{
-                          marginBottom: "25px",
-                        }}
-                      >
-
-                        <div className="card">
-                          <h3>Observations</h3>
-                          <h2>
-                            {priceHistory.length}
-                          </h2>
-                        </div>
-
-                        <div className="card">
-                          <h3>Latest Price</h3>
-                          <h2>
-                            {formatPrice(
-                              priceHistory[
-                                priceHistory.length - 1
-                              ].price
-                            )}
-                          </h2>
-                        </div>
-
-                        <div className="card">
-                          <h3>Lowest Price</h3>
-                          <h2>
-                            {formatPrice(
-                              getHistoryMinPrice()
-                            )}
-                          </h2>
-                        </div>
-
-                        <div className="card">
-                          <h3>Highest Price</h3>
-                          <h2>
-                            {formatPrice(
-                              getHistoryMaxPrice()
-                            )}
-                          </h2>
-                        </div>
-
-                      </div>
-
-                      {/* SIMPLE PRICE TREND */}
-
-                      <div
-                        style={{
-                          marginBottom: "30px",
-                        }}
-                      >
-
-                        <h3
-                          style={{
-                            marginBottom: "15px",
-                          }}
-                        >
-                          Price Trend
-                        </h3>
-
-                        <div
-                          style={{
-                            display: "flex",
-                            flexDirection: "column",
-                            gap: "12px",
-                          }}
-                        >
-
-                          {priceHistory.map(
-                            (item, index) => (
-
-                              <div
-                                key={
-                                  item.observation_id ||
-                                  index
-                                }
-                              >
-
-                                <div
-                                  style={{
-                                    display: "flex",
-                                    justifyContent:
-                                      "space-between",
-                                    fontSize: "13px",
-                                    marginBottom: "5px",
-                                  }}
-                                >
-
-                                  <span>
-                                    Observation{" "}
-                                    {index + 1}
-                                  </span>
-
-                                  <strong>
-                                    {formatPrice(
-                                      item.price
-                                    )}
-                                  </strong>
-
-                                </div>
-
-                                <div
-                                  style={{
-                                    width: "100%",
-                                    height: "12px",
-                                    background:
-                                      "#e5e7eb",
-                                    borderRadius:
-                                      "999px",
-                                    overflow:
-                                      "hidden",
-                                  }}
-                                >
-
-                                  <div
-                                    style={{
-                                      width: `${getPriceBarWidth(
-                                        item.price
-                                      )}%`,
-                                      height: "100%",
-                                      background:
-                                        "#111827",
-                                      borderRadius:
-                                        "999px",
-                                    }}
-                                  />
-
-                                </div>
-
-                              </div>
-
-                            )
-                          )}
-
-                        </div>
-
-                      </div>
-
-                      {/* HISTORY TABLE */}
-
-                      <div
-                        className="table-container"
-                        style={{
-                          overflowX: "auto",
-                        }}
-                      >
-
-                        <table>
-
-                          <thead>
-                            <tr>
-                              <th>#</th>
-                              <th>Price</th>
-                              <th>Currency</th>
-                              <th>Observed At</th>
-                              <th>Stored At</th>
-                              <th>Availability</th>
-                            </tr>
-                          </thead>
-
-                          <tbody>
-
-                            {priceHistory.map(
-                              (item, index) => (
-
-                                <tr
-                                  key={
-                                    item.observation_id ||
-                                    index
-                                  }
-                                >
-
-                                  <td>
-                                    {index + 1}
-                                  </td>
-
-                                  <td
-                                    style={{
-                                      fontWeight: "700",
-                                    }}
-                                  >
-                                    {formatPrice(
-                                      item.price
-                                    )}
-                                  </td>
-
-                                  <td>
-                                    {item.currency ||
-                                      "USD"}
-                                  </td>
-
-                                  <td>
-                                    {formatDate(
-                                      item.observed_at
-                                    )}
-                                  </td>
-
-                                  <td>
-                                    {formatDate(
-                                      item.stored_at
-                                    )}
-                                  </td>
-
-                                  <td>
-                                    {item.availability ||
-                                      "-"}
-                                  </td>
-
-                                </tr>
-
-                              )
-                            )}
-
-                          </tbody>
-
-                        </table>
-
-                      </div>
-
-                    </>
-                  )}
-
-                {!priceHistoryLoading &&
-                  !priceHistoryError &&
-                  priceHistory.length === 0 && (
-                    <div
-                      style={{
-                        padding: "25px",
-                        textAlign: "center",
-                        color: "#6b7280",
-                      }}
-                    >
-                      No price observations found.
-                    </div>
-                  )}
+                <div className="observation-count">
+                  {product.observation_count} observation
+                  {product.observation_count === 1
+                    ? ""
+                    : "s"}
+                </div>
 
               </div>
 
-            </section>
+            )
           )}
 
-          {/* =================================================
-              PRICE CHANGES
-          ================================================= */}
+        </div>
 
-          <section
-            style={{
-              marginTop: "40px",
-              marginBottom: "40px",
-            }}
-          >
+      </section>
 
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                marginBottom: "15px",
-              }}
-            >
+      {/* =====================================================
+          PRICE HISTORY
+      ===================================================== */}
 
-              <div>
+      <section className="panel">
 
-                <h2
-                  style={{
-                    margin: 0,
-                    fontSize: "24px",
-                  }}
-                >
-                  Price Changes
-                </h2>
+        <div className="section-header">
 
-                <p
-                  style={{
-                    marginTop: "6px",
-                    color: "#6b7280",
-                  }}
-                >
-                  Track changes between product observations
-                </p>
+          <div>
+            <h2>
+              Price History
+            </h2>
 
-              </div>
+            <p>
+              Historical observations stored for matched products
+            </p>
+          </div>
 
-              <span
-                style={{
-                  fontSize: "14px",
-                  color: "#6b7280",
-                }}
-              >
-                {priceChanges.length} changes
-              </span>
+        </div>
 
-            </div>
+        <div className="history-table-wrapper">
 
-            {priceChangesError && (
-              <div className="error">
-                {priceChangesError}
-              </div>
-            )}
+          <table className="modern-table">
 
-            {!priceChangesError &&
-              priceChanges.length === 0 && (
-                <div
-                  style={{
-                    background: "#ffffff",
-                    borderRadius: "12px",
-                    padding: "25px",
-                    textAlign: "center",
-                    color: "#6b7280",
-                    boxShadow:
-                      "0 4px 15px rgba(0,0,0,0.06)",
-                  }}
-                >
-                  No price changes found.
-                </div>
+            <thead>
+              <tr>
+                <th>Source</th>
+                <th>Price</th>
+                <th>Original</th>
+                <th>Discount</th>
+                <th>Observed At</th>
+                <th>Match</th>
+              </tr>
+            </thead>
+
+            <tbody>
+
+              {historyProducts.map(
+                (product) => {
+
+                  const history =
+                    product.history || [];
+
+                  const latestPrice =
+                    getLatestHistoryPrice(
+                      history
+                    );
+
+                  return (
+                    <tr
+                      key={`${product.source}-${product.source_product_id}`}
+                    >
+
+                      <td>
+                        <span
+                          className={`source-badge ${getSourceClass(
+                            product.source
+                          )}`}
+                        >
+                          {sourceLabel(
+                            product.source
+                          )}
+                        </span>
+                      </td>
+
+                      <td className="price-cell">
+                        {formatPrice(
+                          latestPrice
+                        )}
+                      </td>
+
+                      <td>
+                        {history.length
+                          ? formatPrice(
+                              history[
+                                history.length - 1
+                              ].original_price
+                            )
+                          : "-"}
+                      </td>
+
+                      <td>
+                        {history.length
+                          ? formatPercent(
+                              Number(
+                                history[
+                                  history.length - 1
+                                ].discount || 0
+                              )
+                            )
+                          : "-"}
+                      </td>
+
+                      <td>
+                        {history.length
+                          ? formatDate(
+                              history[
+                                history.length - 1
+                              ].observed_at
+                            )
+                          : "-"}
+                      </td>
+
+                      <td>
+
+                        <div className="match-cell">
+
+                          <span>
+                            {product.match_method}
+                          </span>
+
+                          <strong>
+                            {(
+                              Number(
+                                product.match_confidence ||
+                                  0
+                              ) * 100
+                            ).toFixed(0)}
+                            %
+                          </strong>
+
+                        </div>
+
+                      </td>
+
+                    </tr>
+                  );
+                }
               )}
 
-            {priceChanges.length > 0 && (
-              <div
-                className="table-container"
-                style={{
-                  overflowX: "auto",
-                }}
-              >
+            </tbody>
 
-                <table>
+          </table>
 
-                  <thead>
-                    <tr>
-                      <th>Product ID</th>
-                      <th>Previous Price</th>
-                      <th>Current Price</th>
-                      <th>Change</th>
-                      <th>Change %</th>
-                      <th>Direction</th>
+        </div>
+
+      </section>
+
+      {/* =====================================================
+          PRICE CHANGES
+      ===================================================== */}
+
+      <section className="panel">
+
+        <div className="section-header">
+
+          <div>
+            <h2>
+              Price Changes
+            </h2>
+
+            <p>
+              Changes detected between stored observations
+            </p>
+          </div>
+
+          <span className="section-count">
+            {changeProducts.filter(
+              (product) =>
+                product.has_change
+            ).length}{" "}
+            changes
+          </span>
+
+        </div>
+
+        <div className="history-table-wrapper">
+
+          <table className="modern-table">
+
+            <thead>
+              <tr>
+                <th>Source</th>
+                <th>Previous</th>
+                <th>Current</th>
+                <th>Change</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+
+            <tbody>
+
+              {changeProducts.map(
+                (product) => {
+
+                  const change =
+                    product.change;
+
+                  return (
+                    <tr
+                      key={`${product.source}-${product.source_product_id}`}
+                    >
+
+                      <td>
+                        <span
+                          className={`source-badge ${getSourceClass(
+                            product.source
+                          )}`}
+                        >
+                          {sourceLabel(
+                            product.source
+                          )}
+                        </span>
+                      </td>
+
+                      <td>
+                        {change
+                          ? formatPrice(
+                              change.previous_price
+                            )
+                          : "-"}
+                      </td>
+
+                      <td className="price-cell">
+                        {product.current
+                          ? formatPrice(
+                              product.current.price
+                            )
+                          : "-"}
+                      </td>
+
+                      <td>
+                        {change
+                          ? formatPercent(
+                              change.change_percent
+                            )
+                          : "No change"}
+                      </td>
+
+                      <td>
+
+                        <span
+                          className={`change-status ${
+                            product.has_change
+                              ? "has-change"
+                              : "no-change"
+                          }`}
+                        >
+                          {product.has_change
+                            ? "Changed"
+                            : "No change"}
+                        </span>
+
+                      </td>
+
                     </tr>
-                  </thead>
+                  );
+                }
+              )}
 
-                  <tbody>
+            </tbody>
 
-                    {priceChanges.map(
-                      (item, index) => {
+          </table>
 
-                        const directionStyle =
-                          getDirectionStyle(
-                            item.direction
-                          );
+        </div>
 
-                        return (
-                          <tr
-                            key={
-                              `${item.product_id}-${index}`
-                            }
-                          >
+      </section>
 
-                            <td>
-                              {item.product_id || "-"}
-                            </td>
+      {/* =====================================================
+          FOOTER
+      ===================================================== */}
 
-                            <td>
-                              {formatPrice(
-                                item.previous_price
-                              )}
-                            </td>
+      <footer className="dashboard-footer">
 
-                            <td>
-                              {formatPrice(
-                                item.current_price
-                              )}
-                            </td>
+        <div>
+          Pricing Intelligence Engine
+        </div>
 
-                            <td
-                              style={{
-                                fontWeight: "600",
-                              }}
-                            >
-                              {formatChange(
-                                item.change_amount
-                              )}
-                            </td>
+        <div>
+          Competitive Pricing MVP
+          <span className="footer-separator">
+            •
+          </span>
+          Amazon Reference
+          <span className="footer-separator">
+            •
+          </span>
+          Walmart + Best Buy Competitors
+        </div>
 
-                            <td
-                              style={{
-                                fontWeight: "600",
-                              }}
-                            >
-                              {formatPercent(
-                                item.change_percent
-                              )}
-                            </td>
-
-                            <td>
-
-                              <span
-                                style={{
-                                  ...directionStyle,
-                                  display:
-                                    "inline-flex",
-                                  alignItems:
-                                    "center",
-                                  gap: "5px",
-                                  padding:
-                                    "5px 10px",
-                                  borderRadius:
-                                    "999px",
-                                  fontSize:
-                                    "13px",
-                                  fontWeight:
-                                    "600",
-                                  textTransform:
-                                    "capitalize",
-                                }}
-                              >
-
-                                {getDirectionIcon(
-                                  item.direction
-                                )}
-
-                                {item.direction ||
-                                  "unknown"}
-
-                              </span>
-
-                            </td>
-
-                          </tr>
-                        );
-                      }
-                    )}
-
-                  </tbody>
-
-                </table>
-
-              </div>
-            )}
-
-          </section>
-
-        </>
-      )}
+      </footer>
 
     </div>
   );
